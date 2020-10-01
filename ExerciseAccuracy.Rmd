@@ -1,5 +1,10 @@
 ---
 title: "Exercise Accuracy Prediction"
+knit: (function(input_file, encoding) {
+  out_dir <- 'docs';
+  rmarkdown::render(input_file,
+ encoding=encoding,
+ output_file=file.path(dirname(input_file), out_dir, 'index.html'))})
 author: "Sarthak"
 date: "30/09/2020"
 output: html_document
@@ -17,7 +22,7 @@ The goal of this project is to predict the manner in which an exercise is perfor
 
 **Loading required R packages**  
 
-```{r, results='hold'}
+```{r, results='hide'}
 # removing any previous variables present in the global environment
 rm(list = ls())
 
@@ -236,8 +241,8 @@ plot(confusionMatgbm$table, col = confusionMatgbm$byClass,
 
 The 3 models shown above have the following accuracy values:
 
-1. Decision Tree: 0.735939
-2. Random Forest: 0.99898
-3. Generalized Boosting Model: 0.986066
+1. Decision Tree: 0.706372
+2. Random Forest: 0.996941
+3. Generalized Boosting Model: 0.988955
 
 From the accuracy values, it can be said that the Random Forest model is the most accurate. So, that will be used to predict the final test data set values.

@@ -1,0 +1,243 @@
+---
+title: "Exercise Accuracy Prediction"
+author: "Sarthak"
+date: "30/09/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE)
+```
+
+## 1. Overview
+
+The goal of this project is to predict the manner in which an exercise is performed, especially barbell lifts. A group of 6 participants was asked to perform this exercise correctly and incorrectly in five different ways. Data was collected from accelerometers connected on the belt, forearm, arm and dumbbell of these participants.
+
+---
+
+**Loading required R packages**  
+
+```{r, results='hold'}
+# removing any previous variables present in the global environment
+rm(list = ls())
+
+# loading required packages
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+library(corrplot)
+
+# setting the seed, for reproducibility
+set.seed(13232)
+```
+  
+---
+
+## 2. Exporatory Data Analysis
+
+### a) Data Loading and Partitioning
+
+The data will be downloaded from the specific urls for this experiment. There are two urls, one for the training data set and another for the testing set. The testing set will be used to make the final predictions on the 20 test cases from the model which will performs the best on the training set. To prevent overfitting of any model, the training set will be further broken down into training and validation sets (65 - 35 split), and the models trained on the training set will be evaluated on the validation set, and the model which has the highest accuracy will be selected.
+
+```{r loading_data}
+# loading the training data set
+trainDataset <- read.csv(url("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"))
+
+# loading the testing data set
+testingDataSet <- read.csv(url("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"))
+
+# partitioning the training set into training and validation sets
+trainInd <- createDataPartition(y = trainDataset$classe, p = 0.7, list = FALSE) 
+# here, "classe" is the output variable classifying the manner of doing an exercise into different classes
+trainSubset <- trainDataset[trainInd,]
+validSubset <- trainDataset[-trainInd,]
+```
+
+```{r}
+# dimensions of training sub set
+dim(trainSubset)
+```
+
+```{r}
+# dimensions of validation sub set
+dim(validSubset)
+```
+
+### b) Cleaning the Data
+
+```{r}
+# variable names in the data set
+colnames(trainSubset)
+```
+
+```{r}
+# description of the output variable
+str(trainSubset$classe)
+```
+
+As we can see, the output variable comprises of classification of the activites into various classes. So, it would be better to convert it into a factor variable
+
+```{r}
+# converting the output variable into a factor variable
+trainSubset$classe <- as.factor(trainSubset$classe)
+validSubset$classe <- as.factor(validSubset$classe)
+
+# new description for the output variable
+str(trainSubset$classe)
+```
+
+The first five variables in the data set are identification variables, and are not necessary for prediction purposes. So, those variables can be removed.
+
+```{r}
+# removing the identification variables
+trainSubset <- trainSubset[, -(1:5)]
+validSubset <- validSubset[, -(1:5)]
+```
+
+Some variables may also have negligible variablility, such that including only one of them in the data set will not help in explaining any observed variability in the outcome. We will remove such variables.
+
+```{r}
+# looking for variables with zero variability
+zeroVarVariables <- nearZeroVar(trainSubset)
+trainSubset <- trainSubset[, -zeroVarVariables]
+validSubset <- validSubset[, -zeroVarVariables]
+```
+
+Some variables might also have a lot NA or Null values, which will create a lot of problems while training models on this data set. We will remove these variables
+
+```{r}
+# finding variables that have a lot of NAs and removing them
+avgNA <- sapply(trainSubset, function(x) mean(is.na(x))) > 0.95
+trainSubset <- trainSubset[, avgNA == F]
+validSubset <- validSubset[, avgNA == F]
+```
+
+```{r}
+# Final dimensions of the training subset
+dim(trainSubset)
+```
+
+```{r}
+# Final dimensions of the validation subset
+dim(validSubset)
+```
+
+So, after some cleaning and pre-processing of the data set, only 54 variables have been selected to be uses in the predictive models.
+
+---
+
+### c) Correlation Analysis
+
+```{r}
+# Creating a correlation matrix between all variables (excluding the output variable)
+correlateMat <- cor(trainSubset[, -54])
+corrplot(correlateMat, order = "FPC", method = "color", type = "lower", 
+         tl.cex = 0.4, tl.col = rgb(0.1, 0.5, 0.6))
+```
+
+The variables along the diagonal are the same as the ones in the vertical axis, so they will have the highest correlation of 1 (marked with the darkest hue of blue/violet).  
+
+The darker the colors in a square in the plot, the more correlated are the variables corresponding to that square. Since, there are low numbers of highly correlated variables, so no principal component analysis has to be performed to further reduce the number of variables in the data set.
+
+## 2. Comparing Prediction Models
+
+Three prediction models will be trained on the training subset, and will be used for predicting the outcomes on the validation subset. The model having the highest classification accuracy will be selected for predicting the outcomes of the testing data set.
+
+### a) Decision Tree
+
+```{r model_training}
+# training the classification tree model on the training subset
+set.seed(13232)
+modelFitdt <- rpart(classe ~ ., data = trainSubset, method = "class")
+```
+
+```{r}
+# creating predictions on the validation data set
+predictdt <- predict(modelFitdt, newdata = validSubset, type = "class")
+
+# creating a confusion matrix for showing the prediction accuracy
+# this will also show the prediction accuracy, some other stats,
+# and a some error values for the different classes in the output
+confusionMatdt <- confusionMatrix(predictdt, validSubset$classe)
+confusionMatdt
+```
+
+```{r}
+# plotting the values in the confusion matrix
+plot(confusionMatdt$table, col = confusionMatdt$byClass, 
+     main = paste("Decision Tree - Accuracy = ", round(confusionMatdt$overall['Accuracy'], 6)))
+```
+
+The number of correct classification of classes can be seen in the left diagonal of the confusion matrix.
+
+### b) Random Forest
+
+```{r}
+# training the random forest model on the training subset
+set.seed(13232)
+
+# performing cross-validation on the training subset
+rfcv <- trainControl(method = "cv", number = 3, verboseIter = F)
+
+modFitrf <- train(classe ~ ., data = trainSubset, method = "rf", trControl = rfcv)
+modFitrf$finalModel
+```
+
+```{r}
+# creating predictions on the validation data set
+predictrf <- predict(modFitrf, newdata = validSubset)
+
+# creating a confusion matrix for showing the prediction accuracy
+# this will also show the prediction accuracy, some other stats,
+# and a some error values for the different classes in the output
+confusionMatrf <- confusionMatrix(predictrf, validSubset$classe)
+confusionMatrf
+```
+
+```{r}
+# plotting the values in the confusion matrix
+plot(confusionMatrf$table, col = confusionMatrf$byClass, 
+     main = paste("Decision Tree - Accuracy = ", round(confusionMatrf$overall['Accuracy'], 6)))
+```
+
+### c) Generalized Boosting Model
+
+```{r}
+# training the generalized boosting model on the training subset
+set.seed(13232)
+
+# performing cross-validation on the training subset
+gbmcv <- trainControl(method = "cv", number = 3)
+
+modFitgbm <- train(classe ~ ., data = trainSubset, method = "gbm", trControl = gbmcv, verbose = F)
+modFitgbm$finalModel
+```
+
+```{r}
+# creating predictions on the validation data set
+predictgbm <- predict(modFitgbm, newdata = validSubset)
+
+# creating a confusion matrix for showing the prediction accuracy
+# this will also show the prediction accuracy, some other stats,
+# and a some error values for the different classes in the output
+confusionMatgbm <- confusionMatrix(predictgbm, validSubset$classe)
+confusionMatgbm
+```
+
+```{r}
+# plotting the values in the confusion matrix
+plot(confusionMatgbm$table, col = confusionMatgbm$byClass, 
+     main = paste("Decision Tree - Accuracy = ", round(confusionMatgbm$overall['Accuracy'], 6)))
+```
+
+## 3. Predicting Values from the Test Data
+
+The 3 models shown above have the following accuracy values:
+
+1. Decision Tree: 0.735939
+2. Random Forest: 0.99898
+3. Generalized Boosting Model: 0.986066
+
+From the accuracy values, it can be said that the Random Forest model is the most accurate. So, that will be used to predict the final test data set values.
